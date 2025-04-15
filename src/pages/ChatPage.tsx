@@ -6,6 +6,9 @@ import MessageBubble, { Message } from '@/components/MessageBubble';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { Button } from '@/components/ui/button';
 import { Info } from 'lucide-react';
+import ApiKeyInput from '@/components/ApiKeyInput';
+import { createThread, addMessageToThread, runAssistant, checkRunStatus, getMessages } from '@/services/openAiService';
+import { toast } from 'sonner';
 
 const INITIAL_MESSAGES: Message[] = [
   {
@@ -19,6 +22,8 @@ const INITIAL_MESSAGES: Message[] = [
 const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [isLoading, setIsLoading] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -29,8 +34,35 @@ const ChatPage = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = (text: string) => {
-    // Add user message
+  useEffect(() => {
+    const apiKey = localStorage.getItem('openai_key');
+    if (apiKey) {
+      setHasApiKey(true);
+      initializeThread();
+    }
+  }, []);
+
+  const initializeThread = async () => {
+    try {
+      const newThreadId = await createThread();
+      setThreadId(newThreadId);
+    } catch (error) {
+      console.error('Error creating thread:', error);
+      toast.error('حدث خطأ في إنشاء المحادثة');
+    }
+  };
+
+  const handleApiKeySet = () => {
+    setHasApiKey(true);
+    initializeThread();
+  };
+
+  const handleSendMessage = async (text: string) => {
+    if (!threadId) {
+      toast.error('لم يتم إنشاء المحادثة بشكل صحيح');
+      return;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text,
@@ -40,36 +72,52 @@ const ChatPage = () => {
     
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
-    
-    // Simulate AI response
-    setTimeout(() => {
-      let response = '';
+
+    try {
+      await addMessageToThread(threadId, text);
+      const run = await runAssistant(threadId);
       
-      // Simple rule-based responses for demo
-      if (text.includes('حمى') || text.includes('سخونة')) {
-        response = 'إذا كان طفلك يعاني من ارتفاع في درجة الحرارة، فقد يكون ذلك بسبب عدوى فيروسية أو بكتيرية. إذا كان عمر طفلك أقل من 3 أشهر وتجاوزت درجة حرارته 38 درجة مئوية، فيجب عليك استشارة الطبيب فوراً. للأطفال الأكبر سناً، يمكنك استخدام خافض للحرارة مناسب لعمره وإعطائه الكثير من السوائل.';
-      }
-      else if (text.includes('إسهال') || text.includes('براز')) {
-        response = 'الإسهال عند الرضع قد يكون علامة على عدوى معوية أو حساسية من الطعام. من المهم الحفاظ على ترطيب طفلك. إذا استمر الإسهال لأكثر من يومين، أو ظهرت علامات الجفاف مثل قلة التبول أو جفاف الفم، يجب عليك استشارة الطبيب فوراً.';
-      }
-      else if (text.includes('نوم') || text.includes('ينام')) {
-        response = 'أنماط نوم الرضع متغيرة ويمكن أن تختلف من طفل لآخر. الرضع الجدد قد ينامون من 14-17 ساعة في اليوم، ولكن ليس بالضرورة بشكل متواصل. مع نمو الطفل، ستلاحظين زيادة فترات الاستيقاظ خلال النهار. حاولي إنشاء روتين نوم ثابت وبيئة هادئة ومريحة لطفلك.';
-      }
-      else {
-        response = 'شكراً على سؤالك. لتقديم إجابة أكثر دقة، هل يمكنك إخباري بالمزيد عن عمر طفلك والأعراض التي تلاحظينها؟ ومتى بدأت هذه الأعراض؟';
-      }
-      
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response,
-        sender: 'assistant',
-        timestamp: new Date()
+      // Poll for completion
+      const checkCompletion = async () => {
+        const status = await checkRunStatus(threadId, run.id);
+        if (status.status === 'completed') {
+          const response = await getMessages(threadId);
+          
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            text: response,
+            sender: 'assistant',
+            timestamp: new Date()
+          };
+          
+          setMessages(prev => [...prev, assistantMessage]);
+          setIsLoading(false);
+        } else if (status.status === 'failed') {
+          toast.error('حدث خطأ في معالجة الرسالة');
+          setIsLoading(false);
+        } else {
+          setTimeout(checkCompletion, 1000);
+        }
       };
       
-      setMessages(prev => [...prev, assistantMessage]);
+      checkCompletion();
+    } catch (error) {
+      console.error('Error processing message:', error);
+      toast.error('حدث خطأ في معالجة الرسالة');
       setIsLoading(false);
-    }, 1500);
+    }
   };
+
+  if (!hasApiKey) {
+    return (
+      <div className="h-[calc(100vh-7rem)] flex flex-col">
+        <Header title="استشارة طبية" />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <ApiKeyInput onApiKeySet={handleApiKeySet} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-7rem)] flex flex-col">
@@ -94,7 +142,11 @@ const ChatPage = () => {
         <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
         
         <div className="flex justify-center mt-2">
-          <Button variant="outline" className="text-xs text-gray-500 py-1 h-auto">
+          <Button 
+            variant="outline" 
+            className="text-xs text-gray-500 py-1 h-auto"
+            onClick={initializeThread}
+          >
             بدء محادثة جديدة
           </Button>
         </div>
