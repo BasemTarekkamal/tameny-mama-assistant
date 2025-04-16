@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import Header from '@/components/Header';
 import ChatInput from '@/components/ChatInput';
@@ -54,11 +55,7 @@ const ChatPage = () => {
       
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      toast({
-        title: "خطأ",
-        description: "عذراً، حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.",
-        variant: "destructive",
-      });
+      toast.error("عذراً، حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
     } finally {
       setIsLoading(false);
     }
