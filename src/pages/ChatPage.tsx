@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import Header from '@/components/Header';
 import ChatInput from '@/components/ChatInput';
@@ -6,6 +5,8 @@ import MessageBubble, { Message } from '@/components/MessageBubble';
 import LoadingIndicator from '@/components/LoadingIndicator';
 import { Button } from '@/components/ui/button';
 import { Info } from 'lucide-react';
+import { sendMessageToWebhook } from '@/utils/chatWebhook';
+import { toast } from 'sonner';
 
 const INITIAL_MESSAGES: Message[] = [
   {
@@ -29,7 +30,7 @@ const ChatPage = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = async (text: string) => {
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -41,23 +42,8 @@ const ChatPage = () => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     
-    // Simulate AI response
-    setTimeout(() => {
-      let response = '';
-      
-      // Simple rule-based responses for demo
-      if (text.includes('حمى') || text.includes('سخونة')) {
-        response = 'إذا كان طفلك يعاني من ارتفاع في درجة الحرارة، فقد يكون ذلك بسبب عدوى فيروسية أو بكتيرية. إذا كان عمر طفلك أقل من 3 أشهر وتجاوزت درجة حرارته 38 درجة مئوية، فيجب عليك استشارة الطبيب فوراً. للأطفال الأكبر سناً، يمكنك استخدام خافض للحرارة مناسب لعمره وإعطائه الكثير من السوائل.';
-      }
-      else if (text.includes('إسهال') || text.includes('براز')) {
-        response = 'الإسهال عند الرضع قد يكون علامة على عدوى معوية أو حساسية من الطعام. من المهم الحفاظ على ترطيب طفلك. إذا استمر الإسهال لأكثر من يومين، أو ظهرت علامات الجفاف مثل قلة التبول أو جفاف الفم، يجب عليك استشارة الطبيب فوراً.';
-      }
-      else if (text.includes('نوم') || text.includes('ينام')) {
-        response = 'أنماط نوم الرضع متغيرة ويمكن أن تختلف من طفل لآخر. الرضع الجدد قد ينامون من 14-17 ساعة في اليوم، ولكن ليس بالضرورة بشكل متواصل. مع نمو الطفل، ستلاحظين زيادة فترات الاستيقاظ خلال النهار. حاولي إنشاء روتين نوم ثابت وبيئة هادئة ومريحة لطفلك.';
-      }
-      else {
-        response = 'شكراً على سؤالك. لتقديم إجابة أكثر دقة، هل يمكنك إخباري بالمزيد عن عمر طفلك والأعراض التي تلاحظينها؟ ومتى بدأت هذه الأعراض؟';
-      }
+    try {
+      const response = await sendMessageToWebhook(text);
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -67,8 +53,15 @@ const ChatPage = () => {
       };
       
       setMessages(prev => [...prev, assistantMessage]);
+    } catch (error) {
+      toast({
+        title: "خطأ",
+        description: "عذراً، حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.",
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -94,7 +87,11 @@ const ChatPage = () => {
         <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
         
         <div className="flex justify-center mt-2">
-          <Button variant="outline" className="text-xs text-gray-500 py-1 h-auto">
+          <Button 
+            variant="outline" 
+            className="text-xs text-gray-500 py-1 h-auto"
+            onClick={() => setMessages(INITIAL_MESSAGES)}
+          >
             بدء محادثة جديدة
           </Button>
         </div>
